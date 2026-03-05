@@ -1,89 +1,63 @@
-// SPDX-License-Identifier: agpl-3.0
-pragma solidity 0.7.6;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
-import {Ownable} from '../../dependencies/openzeppelin/contracts/Ownable.sol';
-import {
-  ILendingPoolAddressesProviderRegistry
-} from '../../interfaces/ILendingPoolAddressesProviderRegistry.sol';
-import {Errors} from '../libraries/helpers/Errors.sol';
+contract LendingPoolAddressesProviderRegistry {
+    // State variables
+    mapping(address => bool) private registeredProviders;
+    address[] private providers;
 
-/**
- * @title LendingPoolAddressesProviderRegistry contract
- * @dev Main registry of LendingPoolAddressesProvider of multiple Aave protocol's markets
- * - Used for indexing purposes of Aave protocol's markets
- * - The id assigned to a LendingPoolAddressesProvider refers to the market it is connected with,
- *   for example with `0` for the Aave main market and `1` for the next created
- * @author Aave
- **/
-contract LendingPoolAddressesProviderRegistry is Ownable, ILendingPoolAddressesProviderRegistry {
-  mapping(address => uint256) private _addressesProviders;
-  address[] private _addressesProvidersList;
+    // Events
+    event ProviderRegistered(address indexed provider);
+    event ProviderDeregistered(address indexed provider);
 
-  /**
-   * @dev Returns the list of registered addresses provider
-   * @return The list of addresses provider, potentially containing address(0) elements
-   **/
-  function getAddressesProvidersList() external view override returns (address[] memory) {
-    address[] memory addressesProvidersList = _addressesProvidersList;
-
-    uint256 maxLength = addressesProvidersList.length;
-
-    address[] memory activeProviders = new address[](maxLength);
-
-    for (uint256 i = 0; i < maxLength; i++) {
-      if (_addressesProviders[addressesProvidersList[i]] > 0) {
-        activeProviders[i] = addressesProvidersList[i];
-      }
+    // Modifier to check for zero address
+    modifier nonZeroAddress(address _address) {
+        require(_address != address(0), "Address cannot be zero");
+        _;
     }
 
-    return activeProviders;
-  }
+    // Register a provider
+    function registerProvider(address _provider) external nonZeroAddress(_provider) {
+        require(_provider.code.length > 0, "Address must be a contract"); // Ensure it's a contract
+        require(!registeredProviders[_provider], "Provider already registered");
 
-  /**
-   * @dev Registers an addresses provider
-   * @param provider The address of the new LendingPoolAddressesProvider
-   * @param id The id for the new LendingPoolAddressesProvider, referring to the market it belongs to
-   **/
-  function registerAddressesProvider(address provider, uint256 id) external override onlyOwner {
-    require(id != 0, Errors.LPAPR_INVALID_ADDRESSES_PROVIDER_ID);
-
-    _addressesProviders[provider] = id;
-    _addToAddressesProvidersList(provider);
-    emit AddressesProviderRegistered(provider);
-  }
-
-  /**
-   * @dev Removes a LendingPoolAddressesProvider from the list of registered addresses provider
-   * @param provider The LendingPoolAddressesProvider address
-   **/
-  function unregisterAddressesProvider(address provider) external override onlyOwner {
-    require(_addressesProviders[provider] > 0, Errors.LPAPR_PROVIDER_NOT_REGISTERED);
-    _addressesProviders[provider] = 0;
-    emit AddressesProviderUnregistered(provider);
-  }
-
-  /**
-   * @dev Returns the id on a registered LendingPoolAddressesProvider
-   * @return The id or 0 if the LendingPoolAddressesProvider is not registered
-   */
-  function getAddressesProviderIdByAddress(address addressesProvider)
-    external
-    view
-    override
-    returns (uint256)
-  {
-    return _addressesProviders[addressesProvider];
-  }
-
-  function _addToAddressesProvidersList(address provider) internal {
-    uint256 providersCount = _addressesProvidersList.length;
-
-    for (uint256 i = 0; i < providersCount; i++) {
-      if (_addressesProvidersList[i] == provider) {
-        return;
-      }
+        registeredProviders[_provider] = true;
+        providers.push(_provider);
+        emit ProviderRegistered(_provider);
     }
 
-    _addressesProvidersList.push(provider);
-  }
+    // Deregister a provider
+    function deregisterProvider(address _provider) external nonZeroAddress(_provider) {
+        require(registeredProviders[_provider], "Provider not registered");
+
+        // Swap-and-pop technique for efficient array removal
+        uint256 index = findProviderIndex(_provider);
+        providers[index] = providers[providers.length - 1];
+        providers.pop();
+        delete registeredProviders[_provider];
+
+        emit ProviderDeregistered(_provider);
+    }
+
+    // Find index of a provider
+    function findProviderIndex(address _provider) internal view returns (uint256) {
+        for (uint256 i = 0; i < providers.length; i++) {
+            if (providers[i] == _provider) {
+                return i;
+            }
+        }
+        revert("Provider not found");
+    }
+
+    // Check if a provider is registered
+    function isProviderRegistered(address _provider) external view returns (bool) {
+        return registeredProviders[_provider];
+    }
+
+    // Get count of registered providers
+    function getProvidersCount() external view returns (uint256) {
+        return providers.length;
+    }
+
+    // Other functions can be added here
 }
